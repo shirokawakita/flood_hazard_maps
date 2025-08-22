@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>洪水ハザードマップ - 国管理河川</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .control-group select,
+        .control-group input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .control-group input[type="range"] {
+            height: 6px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #667eea;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        .opacity-value {
+            text-align: center;
+            font-weight: bold;
+            color: #667eea;
+            margin-top: 5px;
+        }
+        
+        .map-container {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+        
+        .info-panel {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .legend, .info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            flex: 1;
+        }
+        
+        .legend h3, .info h3 {
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 5px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 3px;
+        }
+        
+        .legend-text {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .info p {
+            margin-bottom: 8px;
+            line-height: 1.6;
+            color: #666;
+        }
+        
+        .info a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .info a:hover {
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .control-group {
+                min-width: 100%;
+            }
+            
+            #map {
+                height: 400px;
+            }
+            
+            .info-panel {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌊 洪水ハザードマップ</h1>
+        <p>洪水浸水想定区域（想定最大規模）- 国管理河川・都道府県管理河川</p>
+    </div>
+    
+    <div class="container">
+        <div class="controls">
+            <div class="control-group">
+                <label for="baseMap">ベースマップ:</label>
+                <select id="baseMap">
+                    <option value="std">地理院地図（標準）</option>
+                    <option value="pale">地理院地図（淡色）</option>
+                    <option value="blank">地理院地図（白地図）</option>
+                    <option value="ortho">地理院地図（航空写真）</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="opacity">洪水ハザードの透明度: <span id="opacityValue">0.7</span></label>
+                <input type="range" id="opacity" min="0.1" max="1.0" step="0.1" value="0.7">
+            </div>
+            
+            <div class="control-group">
+                <label for="floodLayer">洪水ハザードレイヤー:</label>
+                <select id="floodLayer">
+                    <option value="kuni">国管理河川</option>
+                    <option value="pref_01">都道府県管理河川 - 北海道</option>
+                    <option value="pref_02">都道府県管理河川 - 青森県</option>
+                    <option value="pref_03">都道府県管理河川 - 岩手県</option>
+                    <option value="pref_04">都道府県管理河川 - 宮城県</option>
+                    <option value="pref_05">都道府県管理河川 - 秋田県</option>
+                    <option value="pref_06">都道府県管理河川 - 山形県</option>
+                    <option value="pref_07">都道府県管理河川 - 福島県</option>
+                    <option value="pref_08">都道府県管理河川 - 茨城県</option>
+                    <option value="pref_09">都道府県管理河川 - 栃木県</option>
+                    <option value="pref_10">都道府県管理河川 - 群馬県</option>
+                    <option value="pref_11">都道府県管理河川 - 埼玉県</option>
+                    <option value="pref_12">都道府県管理河川 - 千葉県</option>
+                    <option value="pref_13">都道府県管理河川 - 東京都</option>
+                    <option value="pref_14">都道府県管理河川 - 神奈川県</option>
+                    <option value="pref_15">都道府県管理河川 - 新潟県</option>
+                    <option value="pref_16">都道府県管理河川 - 富山県</option>
+                    <option value="pref_17">都道府県管理河川 - 石川県</option>
+                    <option value="pref_18">都道府県管理河川 - 福井県</option>
+                    <option value="pref_19">都道府県管理河川 - 山梨県</option>
+                    <option value="pref_20">都道府県管理河川 - 長野県</option>
+                    <option value="pref_21">都道府県管理河川 - 岐阜県</option>
+                    <option value="pref_22">都道府県管理河川 - 静岡県</option>
+                    <option value="pref_23">都道府県管理河川 - 愛知県</option>
+                    <option value="pref_24">都道府県管理河川 - 三重県</option>
+                    <option value="pref_25">都道府県管理河川 - 滋賀県</option>
+                    <option value="pref_26">都道府県管理河川 - 京都府</option>
+                    <option value="pref_27">都道府県管理河川 - 大阪府</option>
+                    <option value="pref_28">都道府県管理河川 - 兵庫県</option>
+                    <option value="pref_29">都道府県管理河川 - 奈良県</option>
+                    <option value="pref_30">都道府県管理河川 - 和歌山県</option>
+                    <option value="pref_31">都道府県管理河川 - 鳥取県</option>
+                    <option value="pref_32">都道府県管理河川 - 島根県</option>
+                    <option value="pref_33">都道府県管理河川 - 岡山県</option>
+                    <option value="pref_34">都道府県管理河川 - 広島県</option>
+                    <option value="pref_35">都道府県管理河川 - 山口県</option>
+                    <option value="pref_36">都道府県管理河川 - 徳島県</option>
+                    <option value="pref_37">都道府県管理河川 - 香川県</option>
+                    <option value="pref_38">都道府県管理河川 - 愛媛県</option>
+                    <option value="pref_39">都道府県管理河川 - 高知県</option>
+                    <option value="pref_40">都道府県管理河川 - 福岡県</option>
+                    <option value="pref_41">都道府県管理河川 - 佐賀県</option>
+                    <option value="pref_42">都道府県管理河川 - 長崎県</option>
+                    <option value="pref_43">都道府県管理河川 - 熊本県</option>
+                    <option value="pref_44">都道府県管理河川 - 大分県</option>
+                    <option value="pref_45">都道府県管理河川 - 宮崎県</option>
+                    <option value="pref_46">都道府県管理河川 - 鹿児島県</option>
+                    <option value="pref_47">都道府県管理河川 - 沖縄県</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="floodToggle">洪水ハザード表示:</label>
+                <select id="floodToggle">
+                    <option value="on">表示</option>
+                    <option value="off">非表示</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="autoZoom">
+                    <input type="checkbox" id="autoZoom" style="margin-right: 8px;">
+                    都道府県選択時に自動ズーム
+                </label>
+            </div>
+        </div>
+        
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+        
+        <div class="info-panel">
+            <div class="legend">
+                <h3>凡例</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #800080;"></div>
+                    <div class="legend-text">浸水深20m以上</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ff69b4;"></div>
+                    <div class="legend-text">浸水深10m以上20m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ff0000;"></div>
+                    <div class="legend-text">浸水深5m以上10m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffb6c1;"></div>
+                    <div class="legend-text">浸水深3m以上5m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffa500;"></div>
+                    <div class="legend-text">浸水深0.5m以上3m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffa500; margin-left: 20px;"></div>
+                    <div class="legend-text">浸水深0.5m以上1m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffff00; margin-left: 20px;"></div>
+                    <div class="legend-text">浸水深0.5m未満</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffff00; margin-left: 20px;"></div>
+                    <div class="legend-text">浸水深0.3m未満</div>
+                </div>
+            </div>
+            
+            <div class="info">
+                <h3>データソース</h3>
+                <p><strong>ベースマップ:</strong> 国土地理院地理院地図</p>
+                <p><strong>ハザードデータ:</strong> 国土交通省各地方整備局等（国管理河川）・都道府県（都道府県管理河川）</p>
+                <p><strong>出典:</strong> <a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html#l2shinsuishin_kuni" target="_blank">ハザードマップポータルサイト</a></p>
+                
+                <h3 style="margin-top: 20px;">使用方法</h3>
+                <p>• <strong>レイヤー選択:</strong> 国管理河川または都道府県管理河川を選択</p>
+                <p>• <strong>ベースマップ切り替え:</strong> ドロップダウンで地図の種類を変更</p>
+                <p>• <strong>透明度調整:</strong> スライダーで洪水ハザードの透明度を調整</p>
+                <p>• <strong>表示切り替え:</strong> 洪水ハザードの表示/非表示を切り替え</p>
+                <p>• <strong>自動ズーム:</strong> チェックボックスで都道府県選択時の自動ズームを制御</p>
+                <p>• <strong>地図操作:</strong> マウスでズーム・パン操作</p>
+                
+                <h3 style="margin-top: 20px;">注意事項</h3>
+                <p>• このデータは想定最大規模の洪水を想定したものです</p>
+                <p>• 実際の災害時には、最新の気象情報や避難指示に従ってください</p>
+                <p>• 国管理河川と都道府県管理河川は異なる管理主体のデータです</p>
+                <p>• 自動ズームをオフにすると、現在の地図位置を維持したままレイヤーを切り替えできます</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>© 2024 洪水ハザードマップ - 国土地理院データを使用</p>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // マップの初期化（日本の中心座標）
+        const map = L.map('map').setView([35.6762, 139.6503], 6);
+        
+        // 都道府県の中心座標とズームレベル
+        const prefectureCenters = {
+            "01": [43.0644, 141.3468, 7], // 北海道
+            "02": [40.8244, 140.7400, 8], // 青森県
+            "03": [39.7036, 141.1527, 8], // 岩手県
+            "04": [38.2682, 140.8721, 8], // 宮城県
+            "05": [39.7186, 140.1024, 8], // 秋田県
+            "06": [38.2404, 140.3633, 8], // 山形県
+            "07": [37.7503, 140.4676, 8], // 福島県
+            "08": [36.3418, 140.4468, 8], // 茨城県
+            "09": [36.5658, 139.8836, 8], // 栃木県
+            "10": [36.3911, 139.0608, 8], // 群馬県
+            "11": [35.8617, 139.6455, 8], // 埼玉県
+            "12": [35.6051, 140.1233, 8], // 千葉県
+            "13": [35.6762, 139.6503, 9], // 東京都
+            "14": [35.4478, 139.6425, 8], // 神奈川県
+            "15": [37.9024, 139.0236, 8], // 新潟県
+            "16": [36.6959, 137.2113, 8], // 富山県
+            "17": [36.5946, 136.6256, 8], // 石川県
+            "18": [35.9432, 136.1886, 8], // 福井県
+            "19": [35.6638, 138.5683, 8], // 山梨県
+            "20": [36.6513, 138.1810, 8], // 長野県
+            "21": [35.3912, 136.7223, 8], // 岐阜県
+            "22": [34.9769, 138.3830, 8], // 静岡県
+            "23": [35.1802, 136.9066, 8], // 愛知県
+            "24": [34.7303, 136.5086, 8], // 三重県
+            "25": [35.0045, 135.8687, 8], // 滋賀県
+            "26": [35.0211, 135.7556, 8], // 京都府
+            "27": [34.6863, 135.5200, 8], // 大阪府
+            "28": [34.6913, 135.1830, 8], // 兵庫県
+            "29": [34.6851, 135.8328, 8], // 奈良県
+            "30": [34.2261, 135.1675, 8], // 和歌山県
+            "31": [35.5038, 134.2384, 8], // 鳥取県
+            "32": [35.4723, 133.0505, 8], // 島根県
+            "33": [34.6617, 133.9349, 8], // 岡山県
+            "34": [34.3963, 132.4596, 8], // 広島県
+            "35": [34.1859, 131.4706, 8], // 山口県
+            "36": [34.0658, 134.5594, 8], // 徳島県
+            "37": [34.3401, 134.0434, 8], // 香川県
+            "38": [33.8416, 132.7658, 8], // 愛媛県
+            "39": [33.5597, 133.5311, 8], // 高知県
+            "40": [33.6064, 130.4181, 8], // 福岡県
+            "41": [33.2494, 130.2989, 8], // 佐賀県
+            "42": [32.7503, 129.8777, 8], // 長崎県
+            "43": [32.7898, 130.7417, 8], // 熊本県
+            "44": [33.2382, 131.6126, 8], // 大分県
+            "45": [31.9111, 131.4239, 8], // 宮崎県
+            "46": [31.5966, 130.5571, 8], // 鹿児島県
+            "47": [26.2124, 127.6809, 8]  // 沖縄県
+        };
+        
+        // ベースマップレイヤーの定義
+        const baseMaps = {
+            std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                attribution: '地理院地図',
+                maxZoom: 18
+            }),
+            pale: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+                attribution: '地理院地図（淡色）',
+                maxZoom: 18
+            }),
+            blank: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', {
+                attribution: '地理院地図（白地図）',
+                maxZoom: 18
+            }),
+            ortho: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/ortho/{z}/{x}/{y}.png', {
+                attribution: '地理院地図（航空写真）',
+                maxZoom: 18
+            })
+        };
+        
+        // 現在のアクティブな洪水レイヤー
+        let currentFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_kuni_data/{z}/{x}/{y}.png', {
+            attribution: '洪水浸水想定区域（想定最大規模）- 国管理河川',
+            opacity: 0.7,
+            maxZoom: 17
+        });
+        
+        // デフォルトのベースマップを追加
+        baseMaps.std.addTo(map);
+        currentFloodLayer.addTo(map);
+        
+        // ベースマップ切り替え
+        document.getElementById('baseMap').addEventListener('change', function() {
+            const selectedMap = this.value;
+            
+            // 現在のベースマップを削除
+            Object.values(baseMaps).forEach(layer => {
+                map.removeLayer(layer);
+            });
+            
+            // 新しいベースマップを追加
+            baseMaps[selectedMap].addTo(map);
+        });
+        
+        // 洪水レイヤー切り替え
+        document.getElementById('floodLayer').addEventListener('change', function() {
+            const selectedLayer = this.value;
+            
+            // 現在の地図の中心とズームを保存
+            const currentCenter = map.getCenter();
+            const currentZoom = map.getZoom();
+            
+            // 現在の洪水レイヤーを削除
+            map.removeLayer(currentFloodLayer);
+            
+            // 新しい洪水レイヤーを作成
+            if (selectedLayer === 'kuni') {
+                // 国管理河川
+                currentFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_kuni_data/{z}/{x}/{y}.png', {
+                    attribution: '洪水浸水想定区域（想定最大規模）- 国管理河川',
+                    opacity: parseFloat(document.getElementById('opacity').value),
+                    maxZoom: 17
+                });
+            } else if (selectedLayer.startsWith('pref_')) {
+                // 都道府県管理河川
+                const prefCode = selectedLayer.replace('pref_', '');
+                const prefName = document.querySelector(`option[value="${selectedLayer}"]`).textContent.split(' - ')[1];
+                
+                currentFloodLayer = L.tileLayer(`https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_pref_data/${prefCode}/{z}/{x}/{y}.png`, {
+                    attribution: `洪水浸水想定区域（想定最大規模）- ${prefName}都道府県管理河川`,
+                    opacity: parseFloat(document.getElementById('opacity').value),
+                    maxZoom: 17
+                });
+            }
+            
+            // 新しいレイヤーを追加（表示がオンの場合のみ）
+            if (document.getElementById('floodToggle').value === 'on') {
+                currentFloodLayer.addTo(map);
+            }
+            
+            // 自動ズームが有効で、都道府県が選択された場合のみズーム
+            if (document.getElementById('autoZoom').checked && selectedLayer.startsWith('pref_')) {
+                const prefCode = selectedLayer.replace('pref_', '');
+                if (prefectureCenters[prefCode]) {
+                    const [lat, lng, zoom] = prefectureCenters[prefCode];
+                    map.setView([lat, lng], zoom);
+                }
+            } else {
+                // 自動ズームが無効または国管理河川の場合は現在の位置を維持
+                map.setView(currentCenter, currentZoom);
+            }
+        });
+        
+        // 透明度調整
+        document.getElementById('opacity').addEventListener('input', function() {
+            const opacity = parseFloat(this.value);
+            currentFloodLayer.setOpacity(opacity);
+            document.getElementById('opacityValue').textContent = opacity.toFixed(1);
+        });
+        
+        // 洪水ハザード表示切り替え
+        document.getElementById('floodToggle').addEventListener('change', function() {
+            const isVisible = this.value === 'on';
+            
+            if (isVisible) {
+                if (!map.hasLayer(currentFloodLayer)) {
+                    currentFloodLayer.addTo(map);
+                }
+            } else {
+                if (map.hasLayer(currentFloodLayer)) {
+                    map.removeLayer(currentFloodLayer);
+                }
+            }
+        });
+        
+        // レスポンシブ対応
+        window.addEventListener('resize', function() {
+            map.invalidateSize();
+        });
+        
+        // エラーハンドリング
+        map.on('tileerror', function(e) {
+            console.log('タイル読み込みエラー:', e);
+        });
+        
+        // 地図クリック時の座標表示（デバッグ用）
+        map.on('click', function(e) {
+            console.log('クリック座標:', e.latlng);
+        });
+    </script>
+</body>
+</html>
