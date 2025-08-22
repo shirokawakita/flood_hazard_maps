@@ -215,7 +215,6 @@
                     <option value="std">地理院地図（標準）</option>
                     <option value="pale">地理院地図（淡色）</option>
                     <option value="blank">地理院地図（白地図）</option>
-                    <option value="ortho">地理院地図（航空写真）</option>
                 </select>
             </div>
             
@@ -432,10 +431,6 @@
             }),
             blank: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', {
                 attribution: '地理院地図（白地図）',
-                maxZoom: 18
-            }),
-            ortho: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/ortho/{z}/{x}/{y}.png', {
-                attribution: '地理院地図（航空写真）',
                 maxZoom: 18
             })
         };
