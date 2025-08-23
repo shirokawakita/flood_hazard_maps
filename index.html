@@ -226,7 +226,7 @@
             <div class="control-group">
                 <label for="floodLayer">洪水ハザードレイヤー:</label>
                 <select id="floodLayer">
-                    <option value="kuni">国管理河川</option>
+                    <option value="pref_46">都道府県管理河川 - 鹿児島県</option>
                     <option value="pref_01">都道府県管理河川 - 北海道</option>
                     <option value="pref_02">都道府県管理河川 - 青森県</option>
                     <option value="pref_03">都道府県管理河川 - 岩手県</option>
@@ -272,14 +272,20 @@
                     <option value="pref_43">都道府県管理河川 - 熊本県</option>
                     <option value="pref_44">都道府県管理河川 - 大分県</option>
                     <option value="pref_45">都道府県管理河川 - 宮崎県</option>
-                    <option value="pref_46">都道府県管理河川 - 鹿児島県</option>
                     <option value="pref_47">都道府県管理河川 - 沖縄県</option>
                 </select>
             </div>
             
             <div class="control-group">
-                <label for="floodToggle">洪水ハザード表示:</label>
+                <label for="floodToggle">都道府県管理河川の表示:</label>
                 <select id="floodToggle">
+                    <option value="on">表示</option>
+                    <option value="off">非表示</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="nationalToggle">国管理河川の表示:</label>
+                <select id="nationalToggle">
                     <option value="on">表示</option>
                     <option value="off">非表示</option>
                 </select>
@@ -341,10 +347,11 @@
                 <p><strong>出典:</strong> <a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html#l2shinsuishin_kuni" target="_blank">ハザードマップポータルサイト</a></p>
                 
                 <h3 style="margin-top: 20px;">使用方法</h3>
-                <p>• <strong>レイヤー選択:</strong> 国管理河川または都道府県管理河川を選択</p>
+                <p>• <strong>レイヤー選択:</strong> 都道府県管理河川を選択</p>
                 <p>• <strong>ベースマップ切り替え:</strong> ドロップダウンで地図の種類を変更</p>
                 <p>• <strong>透明度調整:</strong> スライダーで洪水ハザードの透明度を調整</p>
-                <p>• <strong>表示切り替え:</strong> 洪水ハザードの表示/非表示を切り替え</p>
+                <p>• <strong>都道府県管理河川表示:</strong> 選択した都道府県のハザード表示/非表示を切り替え</p>
+                <p>• <strong>国管理河川表示:</strong> 国管理河川の表示/非表示を切り替え</p>
                 <p>• <strong>自動ズーム:</strong> チェックボックスで都道府県選択時の自動ズームを制御</p>
                 <p>• <strong>地図操作:</strong> マウスでズーム・パン操作</p>
                 
@@ -352,6 +359,7 @@
                 <p>• このデータは想定最大規模の洪水を想定したものです</p>
                 <p>• 実際の災害時には、最新の気象情報や避難指示に従ってください</p>
                 <p>• 国管理河川と都道府県管理河川は異なる管理主体のデータです</p>
+                <p>• デフォルトで白地図が表示され、洪水ハザードデータの視認性が最適化されています</p>
                 <p>• 自動ズームをオフにすると、現在の地図位置を維持したままレイヤーを切り替えできます</p>
             </div>
         </div>
@@ -366,7 +374,7 @@
     
     <script>
         // マップの初期化（日本の中心座標）
-        const map = L.map('map').setView([35.6762, 139.6503], 6);
+        const map = L.map('map').setView([31.5602, 130.5581], 8);
         
         // 都道府県の中心座標とズームレベル
         const prefectureCenters = {
@@ -435,16 +443,24 @@
             })
         };
         
-        // 現在のアクティブな洪水レイヤー
-        let currentFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_kuni_data/{z}/{x}/{y}.png', {
+        // 現在のアクティブな洪水レイヤー（初期は鹿児島県）
+        let currentFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_pref_data/46/{z}/{x}/{y}.png', {
+            attribution: '洪水浸水想定区域（想定最大規模）- 鹿児島県都道府県管理河川',
+            opacity: 0.7,
+            maxZoom: 17
+        });
+
+        // 国管理河川レイヤー
+        let nationalFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_kuni_data/{z}/{x}/{y}.png', {
             attribution: '洪水浸水想定区域（想定最大規模）- 国管理河川',
             opacity: 0.7,
             maxZoom: 17
         });
         
-        // デフォルトのベースマップを追加
-        baseMaps.std.addTo(map);
+        // デフォルトのベースマップを追加（白地図）
+        baseMaps.blank.addTo(map);
         currentFloodLayer.addTo(map);
+        nationalFloodLayer.addTo(map);
         
         // ベースマップ切り替え
         document.getElementById('baseMap').addEventListener('change', function() {
@@ -457,6 +473,14 @@
             
             // 新しいベースマップを追加
             baseMaps[selectedMap].addTo(map);
+            
+            // ハザードレイヤーを再追加（表示されている場合のみ）
+            if (document.getElementById('floodToggle').value === 'on') {
+                currentFloodLayer.addTo(map);
+            }
+            if (document.getElementById('nationalToggle').value === 'on') {
+                nationalFloodLayer.addTo(map);
+            }
         });
         
         // 洪水レイヤー切り替え
@@ -470,40 +494,29 @@
             // 現在の洪水レイヤーを削除
             map.removeLayer(currentFloodLayer);
             
-            // 新しい洪水レイヤーを作成
-            if (selectedLayer === 'kuni') {
-                // 国管理河川
-                currentFloodLayer = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_kuni_data/{z}/{x}/{y}.png', {
-                    attribution: '洪水浸水想定区域（想定最大規模）- 国管理河川',
-                    opacity: parseFloat(document.getElementById('opacity').value),
-                    maxZoom: 17
-                });
-            } else if (selectedLayer.startsWith('pref_')) {
-                // 都道府県管理河川
-                const prefCode = selectedLayer.replace('pref_', '');
-                const prefName = document.querySelector(`option[value="${selectedLayer}"]`).textContent.split(' - ')[1];
-                
-                currentFloodLayer = L.tileLayer(`https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_pref_data/${prefCode}/{z}/{x}/{y}.png`, {
-                    attribution: `洪水浸水想定区域（想定最大規模）- ${prefName}都道府県管理河川`,
-                    opacity: parseFloat(document.getElementById('opacity').value),
-                    maxZoom: 17
-                });
-            }
+            // 都道府県管理河川レイヤーを作成
+            const prefCode = selectedLayer.replace('pref_', '');
+            const prefName = document.querySelector(`option[value="${selectedLayer}"]`).textContent.split(' - ')[1];
+            
+            currentFloodLayer = L.tileLayer(`https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_pref_data/${prefCode}/{z}/{x}/{y}.png`, {
+                attribution: `洪水浸水想定区域（想定最大規模）- ${prefName}都道府県管理河川`,
+                opacity: parseFloat(document.getElementById('opacity').value),
+                maxZoom: 17
+            });
             
             // 新しいレイヤーを追加（表示がオンの場合のみ）
             if (document.getElementById('floodToggle').value === 'on') {
                 currentFloodLayer.addTo(map);
             }
             
-            // 自動ズームが有効で、都道府県が選択された場合のみズーム
-            if (document.getElementById('autoZoom').checked && selectedLayer.startsWith('pref_')) {
-                const prefCode = selectedLayer.replace('pref_', '');
+            // 自動ズームが有効な場合のみズーム
+            if (document.getElementById('autoZoom').checked) {
                 if (prefectureCenters[prefCode]) {
                     const [lat, lng, zoom] = prefectureCenters[prefCode];
                     map.setView([lat, lng], zoom);
                 }
             } else {
-                // 自動ズームが無効または国管理河川の場合は現在の位置を維持
+                // 自動ズームが無効の場合は現在の位置を維持
                 map.setView(currentCenter, currentZoom);
             }
         });
@@ -512,6 +525,7 @@
         document.getElementById('opacity').addEventListener('input', function() {
             const opacity = parseFloat(this.value);
             currentFloodLayer.setOpacity(opacity);
+            nationalFloodLayer.setOpacity(opacity);
             document.getElementById('opacityValue').textContent = opacity.toFixed(1);
         });
         
@@ -526,6 +540,21 @@
             } else {
                 if (map.hasLayer(currentFloodLayer)) {
                     map.removeLayer(currentFloodLayer);
+                }
+            }
+        });
+
+        // 国管理河川表示切り替え
+        document.getElementById('nationalToggle').addEventListener('change', function() {
+            const isVisible = this.value === 'on';
+            
+            if (isVisible) {
+                if (!map.hasLayer(nationalFloodLayer)) {
+                    nationalFloodLayer.addTo(map);
+                }
+            } else {
+                if (map.hasLayer(nationalFloodLayer)) {
+                    map.removeLayer(nationalFloodLayer);
                 }
             }
         });
