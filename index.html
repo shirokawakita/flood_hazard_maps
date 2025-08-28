@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>洪水ハザードマップ - 国管理河川</title>
+    <title>洪水ハザードマップ - 国管理河川・GeoJSON対応</title>
     
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -69,7 +69,8 @@
         }
         
         .control-group select,
-        .control-group input[type="range"] {
+        .control-group input[type="range"],
+        .control-group input[type="file"] {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
@@ -99,6 +100,83 @@
             font-weight: bold;
             color: #667eea;
             margin-top: 5px;
+        }
+        
+        .geojson-controls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .geojson-controls h4 {
+            margin-bottom: 10px;
+            color: #495057;
+            font-size: 16px;
+        }
+        
+        .geojson-layer-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .geojson-layer-info {
+            flex: 1;
+            margin-right: 10px;
+        }
+        
+        .geojson-layer-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 2px;
+        }
+        
+        .geojson-layer-details {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .geojson-layer-controls {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        
+        .geojson-layer-controls button {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .btn-remove {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-remove:hover {
+            background: #c82333;
+        }
+        
+        .btn-toggle {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-toggle:hover {
+            background: #218838;
+        }
+        
+        .btn-toggle.hidden {
+            background: #6c757d;
         }
         
         .map-container {
@@ -198,13 +276,24 @@
             .info-panel {
                 flex-direction: column;
             }
+            
+            .geojson-layer-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .geojson-layer-controls {
+                margin-top: 8px;
+                width: 100%;
+                justify-content: flex-end;
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🌊 洪水ハザードマップ</h1>
-        <p>洪水浸水想定区域（想定最大規模）- 国管理河川・都道府県管理河川</p>
+        <p>洪水浸水想定区域（想定最大規模）- 国管理河川・都道府県管理河川・GeoJSON対応</p>
     </div>
     
     <div class="container">
@@ -299,6 +388,16 @@
             </div>
         </div>
         
+        <!-- GeoJSONアップロードコントロール -->
+        <div class="geojson-controls">
+            <h4>📁 GeoJSONファイルの追加</h4>
+            <div class="control-group">
+                <label for="geojsonFile">GeoJSONファイルを選択:</label>
+                <input type="file" id="geojsonFile" accept=".geojson,.json" multiple>
+            </div>
+            <div id="geojsonLayers"></div>
+        </div>
+        
         <div class="map-container">
             <div id="map"></div>
         </div>
@@ -353,6 +452,7 @@
                 <p>• <strong>都道府県管理河川表示:</strong> 選択した都道府県のハザード表示/非表示を切り替え</p>
                 <p>• <strong>国管理河川表示:</strong> 国管理河川の表示/非表示を切り替え</p>
                 <p>• <strong>自動ズーム:</strong> チェックボックスで都道府県選択時の自動ズームを制御</p>
+                <p>• <strong>GeoJSON追加:</strong> ファイル選択でGeoJSONデータを地図に重畳</p>
                 <p>• <strong>地図操作:</strong> マウスでズーム・パン操作</p>
                 
                 <h3 style="margin-top: 20px;">注意事項</h3>
@@ -361,6 +461,7 @@
                 <p>• 国管理河川と都道府県管理河川は異なる管理主体のデータです</p>
                 <p>• デフォルトで白地図が表示され、洪水ハザードデータの視認性が最適化されています</p>
                 <p>• 自動ズームをオフにすると、現在の地図位置を維持したままレイヤーを切り替えできます</p>
+                <p>• GeoJSONファイルは標準的なGeoJSON形式に対応しています</p>
             </div>
         </div>
     </div>
@@ -375,6 +476,10 @@
     <script>
         // マップの初期化（日本の中心座標）
         const map = L.map('map').setView([31.5602, 130.5581], 8);
+        
+        // GeoJSONレイヤー管理
+        const geojsonLayers = new Map();
+        let geojsonLayerCounter = 0;
         
         // 都道府県の中心座標とズームレベル
         const prefectureCenters = {
@@ -462,6 +567,140 @@
         currentFloodLayer.addTo(map);
         nationalFloodLayer.addTo(map);
         
+        // GeoJSONファイル読み込み処理
+        function handleGeoJSONFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const geojsonData = JSON.parse(e.target.result);
+                    addGeoJSONLayer(geojsonData, file.name);
+                } catch (error) {
+                    alert('GeoJSONファイルの読み込みに失敗しました: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // GeoJSONレイヤー追加
+        function addGeoJSONLayer(geojsonData, fileName) {
+            const layerId = 'geojson_' + geojsonLayerCounter++;
+            
+            // ランダムな色を生成
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ff8800', '#8800ff', '#0088ff', '#ff0088'];
+            const color = colors[geojsonLayerCounter % colors.length];
+            
+            // GeoJSONレイヤーを作成
+            const geojsonLayer = L.geoJSON(geojsonData, {
+                style: {
+                    fillColor: color,
+                    weight: 2,
+                    opacity: 1,
+                    color: color,
+                    fillOpacity: 0.3
+                },
+                onEachFeature: function(feature, layer) {
+                    if (feature.properties) {
+                        const popupContent = Object.keys(feature.properties)
+                            .map(key => `<strong>${key}:</strong> ${feature.properties[key]}`)
+                            .join('<br>');
+                        layer.bindPopup(popupContent);
+                    }
+                }
+            });
+            
+            // レイヤーをマップに追加
+            geojsonLayer.addTo(map);
+            
+            // レイヤー情報を保存
+            geojsonLayers.set(layerId, {
+                layer: geojsonLayer,
+                name: fileName,
+                visible: true,
+                color: color,
+                featureCount: geojsonData.features ? geojsonData.features.length : 0
+            });
+            
+            // UIにレイヤー情報を追加
+            addGeoJSONLayerUI(layerId, fileName, color, geojsonData.features ? geojsonData.features.length : 0);
+            
+            // レイヤーの範囲にズーム（オプション）
+            if (geojsonLayer.getBounds().isValid()) {
+                map.fitBounds(geojsonLayer.getBounds());
+            }
+        }
+        
+        // GeoJSONレイヤーUI追加
+        function addGeoJSONLayerUI(layerId, fileName, color, featureCount) {
+            const layersContainer = document.getElementById('geojsonLayers');
+            const layerItem = document.createElement('div');
+            layerItem.className = 'geojson-layer-item';
+            layerItem.id = 'layer_' + layerId;
+            
+            layerItem.innerHTML = `
+                <div class="geojson-layer-info">
+                    <div class="geojson-layer-name">${fileName}</div>
+                    <div class="geojson-layer-details">
+                        色: <span style="color: ${color};">■</span> | 
+                        フィーチャ数: ${featureCount}
+                    </div>
+                </div>
+                <div class="geojson-layer-controls">
+                    <button class="btn-toggle" onclick="toggleGeoJSONLayer('${layerId}')">非表示</button>
+                    <button class="btn-remove" onclick="removeGeoJSONLayer('${layerId}')">削除</button>
+                </div>
+            `;
+            
+            layersContainer.appendChild(layerItem);
+        }
+        
+        // GeoJSONレイヤー表示/非表示切り替え
+        function toggleGeoJSONLayer(layerId) {
+            const layerInfo = geojsonLayers.get(layerId);
+            if (!layerInfo) return;
+            
+            const button = document.querySelector(`#layer_${layerId} .btn-toggle`);
+            
+            if (layerInfo.visible) {
+                map.removeLayer(layerInfo.layer);
+                layerInfo.visible = false;
+                button.textContent = '表示';
+                button.classList.add('hidden');
+            } else {
+                map.addLayer(layerInfo.layer);
+                layerInfo.visible = true;
+                button.textContent = '非表示';
+                button.classList.remove('hidden');
+            }
+        }
+        
+        // GeoJSONレイヤー削除
+        function removeGeoJSONLayer(layerId) {
+            const layerInfo = geojsonLayers.get(layerId);
+            if (!layerInfo) return;
+            
+            map.removeLayer(layerInfo.layer);
+            geojsonLayers.delete(layerId);
+            
+            const layerItem = document.getElementById('layer_' + layerId);
+            if (layerItem) {
+                layerItem.remove();
+            }
+        }
+        
+        // ファイル選択イベント
+        document.getElementById('geojsonFile').addEventListener('change', function(e) {
+            const files = e.target.files;
+            for (let file of files) {
+                if (file.type === 'application/json' || file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
+                    handleGeoJSONFile(file);
+                } else {
+                    alert('GeoJSONファイルを選択してください: ' + file.name);
+                }
+            }
+            // ファイル選択をリセット
+            e.target.value = '';
+        });
+        
         // ベースマップ切り替え
         document.getElementById('baseMap').addEventListener('change', function() {
             const selectedMap = this.value;
@@ -481,6 +720,13 @@
             if (document.getElementById('nationalToggle').value === 'on') {
                 nationalFloodLayer.addTo(map);
             }
+            
+            // GeoJSONレイヤーを再追加（表示されている場合のみ）
+            geojsonLayers.forEach((layerInfo, layerId) => {
+                if (layerInfo.visible) {
+                    map.addLayer(layerInfo.layer);
+                }
+            });
         });
         
         // 洪水レイヤー切り替え
