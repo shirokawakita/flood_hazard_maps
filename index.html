@@ -301,9 +301,10 @@
             <div class="control-group">
                 <label for="baseMap">ベースマップ:</label>
                 <select id="baseMap">
-                    <option value="std">地理院地図（標準）</option>
+                    <option value="std" selected>地理院地図（標準）</option>
                     <option value="pale">地理院地図（淡色）</option>
                     <option value="blank">地理院地図（白地図）</option>
+                    <option value="google">Google Satellite</option>
                 </select>
             </div>
             
@@ -477,9 +478,19 @@
         // マップの初期化（日本の中心座標）
         const map = L.map('map').setView([31.5602, 130.5581], 8);
         
-        // GeoJSONレイヤー管理
+        // レイヤー管理
         const geojsonLayers = new Map();
         let geojsonLayerCounter = 0;
+        
+        // レイヤーグループを作成
+        const baseLayerGroup = L.layerGroup();
+        const floodLayerGroup = L.layerGroup();
+        const geojsonLayerGroup = L.layerGroup();
+        
+        // レイヤーグループをマップに追加
+        baseLayerGroup.addTo(map);
+        floodLayerGroup.addTo(map);
+        geojsonLayerGroup.addTo(map);
         
         // 都道府県の中心座標とズームレベル
         const prefectureCenters = {
@@ -545,6 +556,10 @@
             blank: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/blank/{z}/{x}/{y}.png', {
                 attribution: '地理院地図（白地図）',
                 maxZoom: 18
+            }),
+            google: L.tileLayer('http://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}', {
+                attribution: 'Google Satellite',
+                maxZoom: 20
             })
         };
         
@@ -562,10 +577,10 @@
             maxZoom: 17
         });
         
-        // デフォルトのベースマップを追加（白地図）
-        baseMaps.blank.addTo(map);
-        currentFloodLayer.addTo(map);
-        nationalFloodLayer.addTo(map);
+        // デフォルトのベースマップを追加（地理院地図標準）
+        baseMaps.std.addTo(baseLayerGroup);
+        currentFloodLayer.addTo(floodLayerGroup);
+        nationalFloodLayer.addTo(floodLayerGroup);
         
         // GeoJSONファイル読み込み処理
         function handleGeoJSONFile(file) {
@@ -608,8 +623,8 @@
                 }
             });
             
-            // レイヤーをマップに追加
-            geojsonLayer.addTo(map);
+            // レイヤーをGeoJSONレイヤーグループに追加
+            geojsonLayer.addTo(geojsonLayerGroup);
             
             // レイヤー情報を保存
             geojsonLayers.set(layerId, {
@@ -661,12 +676,12 @@
             const button = document.querySelector(`#layer_${layerId} .btn-toggle`);
             
             if (layerInfo.visible) {
-                map.removeLayer(layerInfo.layer);
+                geojsonLayerGroup.removeLayer(layerInfo.layer);
                 layerInfo.visible = false;
                 button.textContent = '表示';
                 button.classList.add('hidden');
             } else {
-                map.addLayer(layerInfo.layer);
+                geojsonLayerGroup.addLayer(layerInfo.layer);
                 layerInfo.visible = true;
                 button.textContent = '非表示';
                 button.classList.remove('hidden');
@@ -678,7 +693,7 @@
             const layerInfo = geojsonLayers.get(layerId);
             if (!layerInfo) return;
             
-            map.removeLayer(layerInfo.layer);
+            geojsonLayerGroup.removeLayer(layerInfo.layer);
             geojsonLayers.delete(layerId);
             
             const layerItem = document.getElementById('layer_' + layerId);
@@ -705,28 +720,27 @@
         document.getElementById('baseMap').addEventListener('change', function() {
             const selectedMap = this.value;
             
-            // 現在のベースマップを削除
-            Object.values(baseMaps).forEach(layer => {
-                map.removeLayer(layer);
-            });
+            // 現在のハザードレイヤーの表示状態を保存
+            const floodLayerVisible = document.getElementById('floodToggle').value === 'on';
+            const nationalLayerVisible = document.getElementById('nationalToggle').value === 'on';
             
-            // 新しいベースマップを追加
-            baseMaps[selectedMap].addTo(map);
+            // ベースレイヤーグループをクリア
+            baseLayerGroup.clearLayers();
             
-            // ハザードレイヤーを再追加（表示されている場合のみ）
-            if (document.getElementById('floodToggle').value === 'on') {
-                currentFloodLayer.addTo(map);
-            }
-            if (document.getElementById('nationalToggle').value === 'on') {
-                nationalFloodLayer.addTo(map);
-            }
+            // 新しいベースマップを追加（最下層）
+            baseMaps[selectedMap].addTo(baseLayerGroup);
             
-            // GeoJSONレイヤーを再追加（表示されている場合のみ）
-            geojsonLayers.forEach((layerInfo, layerId) => {
-                if (layerInfo.visible) {
-                    map.addLayer(layerInfo.layer);
+            // ハザードレイヤーの表示状態を復元
+            if (floodLayerVisible) {
+                if (!floodLayerGroup.hasLayer(currentFloodLayer)) {
+                    currentFloodLayer.addTo(floodLayerGroup);
                 }
-            });
+            }
+            if (nationalLayerVisible) {
+                if (!floodLayerGroup.hasLayer(nationalFloodLayer)) {
+                    nationalFloodLayer.addTo(floodLayerGroup);
+                }
+            }
         });
         
         // 洪水レイヤー切り替え
@@ -737,8 +751,12 @@
             const currentCenter = map.getCenter();
             const currentZoom = map.getZoom();
             
-            // 現在の洪水レイヤーを削除
-            map.removeLayer(currentFloodLayer);
+            // 現在のハザードレイヤーの表示状態を保存
+            const floodLayerVisible = document.getElementById('floodToggle').value === 'on';
+            const nationalLayerVisible = document.getElementById('nationalToggle').value === 'on';
+            
+            // 洪水レイヤーグループをクリア
+            floodLayerGroup.clearLayers();
             
             // 都道府県管理河川レイヤーを作成
             const prefCode = selectedLayer.replace('pref_', '');
@@ -750,9 +768,12 @@
                 maxZoom: 17
             });
             
-            // 新しいレイヤーを追加（表示がオンの場合のみ）
-            if (document.getElementById('floodToggle').value === 'on') {
-                currentFloodLayer.addTo(map);
+            // ハザードレイヤーの表示状態を復元
+            if (floodLayerVisible) {
+                currentFloodLayer.addTo(floodLayerGroup);
+            }
+            if (nationalLayerVisible) {
+                nationalFloodLayer.addTo(floodLayerGroup);
             }
             
             // 自動ズームが有効な場合のみズーム
@@ -780,12 +801,12 @@
             const isVisible = this.value === 'on';
             
             if (isVisible) {
-                if (!map.hasLayer(currentFloodLayer)) {
-                    currentFloodLayer.addTo(map);
+                if (!floodLayerGroup.hasLayer(currentFloodLayer)) {
+                    currentFloodLayer.addTo(floodLayerGroup);
                 }
             } else {
-                if (map.hasLayer(currentFloodLayer)) {
-                    map.removeLayer(currentFloodLayer);
+                if (floodLayerGroup.hasLayer(currentFloodLayer)) {
+                    floodLayerGroup.removeLayer(currentFloodLayer);
                 }
             }
         });
@@ -795,12 +816,12 @@
             const isVisible = this.value === 'on';
             
             if (isVisible) {
-                if (!map.hasLayer(nationalFloodLayer)) {
-                    nationalFloodLayer.addTo(map);
+                if (!floodLayerGroup.hasLayer(nationalFloodLayer)) {
+                    nationalFloodLayer.addTo(floodLayerGroup);
                 }
             } else {
-                if (map.hasLayer(nationalFloodLayer)) {
-                    map.removeLayer(nationalFloodLayer);
+                if (floodLayerGroup.hasLayer(nationalFloodLayer)) {
+                    floodLayerGroup.removeLayer(nationalFloodLayer);
                 }
             }
         });
